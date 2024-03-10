@@ -226,9 +226,9 @@ int main(int argc, char *argv[]) {
     error("CLIENT: ERROR connecting");
   }
 
-  if(handshake(socketFD) == 0) {
-     error("CLIENT: Handshake rejected by server.");  
-  }
+//  if(handshake(socketFD) == 0) {
+//     error("CLIENT: Handshake rejected by server.");  
+//  }
 
 /*  
   // load the file contents file into filebuffer

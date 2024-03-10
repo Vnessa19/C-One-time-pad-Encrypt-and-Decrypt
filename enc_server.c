@@ -260,11 +260,11 @@ int main(int argc, char *argv[])
             //child process
             close(sfd);
 */
-           if(handshake(cfd) == 1){
+//           if(handshake(cfd) == 1){
               processRequest(cfd);
-           } else {
+//           } else {
               //close(cfd);
-           }
+//           }
 /*
             //terminate child process
             exit(0);
