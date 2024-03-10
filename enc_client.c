@@ -81,9 +81,6 @@ char* readFileIntoBuffer(const char* filename, size_t* length) {
 }
 
 /*
- * function to combine the plain text file and the key file separated by a comma
- * this is necessary becasue the whole thing has to be sent to the server in one message
- */
 char* combineBuffersCommaDemilimted(const char* buffer1, size_t length1, const char* buffer2, size_t length2) {
     // the total length for the combined buffer 
     // plus 3 for the comma, an end of transmission indicator @ for null termnator 
@@ -118,6 +115,7 @@ char* combineBuffersCommaDemilimted(const char* buffer1, size_t length1, const c
 
     return combinedBuffer;
 }
+*/
 //offer a handshake to server
 int handshake(int socketFD){
     char buffer[3];
@@ -152,7 +150,7 @@ int main(int argc, char *argv[]) {
   //argv[2] this is the key filenam
   //argv[3] this is the port
  
-  int socketFD, portNumber, charsWritten, charsRead;
+  int socketFD, portNumber, charsWritten;
   struct sockaddr_in serverAddress;
   
   // Check usage & args
@@ -163,12 +161,11 @@ int main(int argc, char *argv[]) {
  // load the file contents file into filebuffer
   size_t plainTextFileLength;
   char* fileBuffer = readFileIntoBuffer(argv[1], &plainTextFileLength);
-  //remove new line at the end if present
+  //insert poison pill at the new line
   if(fileBuffer[plainTextFileLength - 1] =='\n') {
-    fileBuffer[plainTextFileLength - 1] = '\0';
-    plainTextFileLength--;
+    fileBuffer[plainTextFileLength - 1] = '@';
+    //plainTextFileLength--;
   }
-
 
   // now load key file into another buffer
   size_t keyLength;
@@ -181,9 +178,10 @@ int main(int argc, char *argv[]) {
 
   //now lets combine both buffers separated by a coma so that we can send 
   //the whole thing in one message to the server
-  char* combinedBuffer = combineBuffersCommaDemilimted(fileBuffer, plainTextFileLength, keyBuffer, keyLength);
-  size_t combinedBufferLength = strlen(combinedBuffer);
+ // char* combinedBuffer = combineBuffersCommaDemilimted(fileBuffer, plainTextFileLength, keyBuffer, keyLength);
+  //size_t combinedBufferLength = strlen(combinedBuffer);
 
+  
   // Create a socket
   socketFD = socket(AF_INET, SOCK_STREAM, 0); 
   if (socketFD < 0){
@@ -198,99 +196,96 @@ int main(int argc, char *argv[]) {
     error("CLIENT: ERROR connecting");
   }
 
+  
 //  if(handshake(socketFD) == 0) {
 //    error("CLIENT: Handshake rejected by server.");  
 //  }
-/*
-  // load the file contents file into filebuffer
-  size_t plainTextFileLength;
-  char* fileBuffer = readFileIntoBuffer(argv[1], &plainTextFileLength);
-  //remove new line at the end if present
-  if(fileBuffer[plainTextFileLength - 1] =='\n') {
-    fileBuffer[plainTextFileLength - 1] = '\0';
-    plainTextFileLength--;
+
+// Clear out the buffer array
+ // char buffer[500];
+  //memset(buffer, '\0', sizeof(buffer));
+  // Send message to server
+  
+    int doneSend1 = 0;
+    int doneSend2 = 0;
+    int sendCount1 = 0;
+    int sendCount2 = 0;
+    int pCharsSent;
+    int keyCharsSent;
+    int charsRead;
+    char receivedChar;
+
+    while(1) {
+      if(doneSend1 == 0) {
+        pCharsSent =  send(socketFD, &fileBuffer[sendCount1], 1, 0); 
+        if (pCharsSent < 0){
+          error("ERROR reading from socket");
+        }
+        if (fileBuffer[sendCount1] == '@') {
+          doneSend1 = 1;
+        }
+        sendCount1++;
+      }
+
+      if(doneSend2 == 0){
+        keyCharsSent = send(socketFD, &keyBuffer[sendCount2], 1, 0);
+        if (keyCharsSent < 0){
+          error("ERROR reading from socket");
+        }
+        if (keyBuffer[sendCount2] == '\n' || doneSend1 == 1) {
+          doneSend2 = 1;
+        }
+
+        sendCount2++;
+      }
+
+      if (doneSend1 == 1 && doneSend2 == 1){
+        printf("\n");
+        break;
+      } else {
+        charsRead = recv(socketFD, &receivedChar, 1, 0);
+        if (charsRead < 0){
+          error("Server ERROR reading from socket");
+        }
+        printf("%c", receivedChar);
+      }
+
+    }
+
+  //charsWritten = send(socketFD, buffer, strlen(buffer), 0); 
+  //if (charsWritten < 0){
+  //  error("CLIENT: ERROR writing to socket");
+  //}
+  //if (charsWritten < strlen(buffer)){
+  //  printf("CLIENT: WARNING: Not all data written to socket!\n");
+ // }
+
+  // Get return message from server
+  // Clear out the buffer again for reuse
+/* 
+  memset(buffer, '\0', sizeof(buffer));
+  // Read data from the socket, leaving \0 at end
+  charsRead = recv(socketFD, buffer, sizeof(buffer) - 1, 0); 
+  if (charsRead < 0){
+    error("CLIENT: ERROR reading from socket");
   }
-
-
-  // now load key file into another buffer
-  size_t keyLength;
-  char* keyBuffer = readFileIntoBuffer(argv[2], &keyLength);
-
-  if(keyLength < plainTextFileLength) {
-    fprintf(stderr, "CLIENT: Key file is shorter than plaintext.");
-    exit(1);
-  }
-
-  //now lets combine both buffers separated by a coma so that we can send 
-  //the whole thing in one message to the server
-  char* combinedBuffer = combineBuffersCommaDemilimted(fileBuffer, plainTextFileLength, keyBuffer, keyLength);
-  size_t combinedBufferLength = strlen(combinedBuffer);
+  printf("CLIENT: I received this from the server: \"%s\"\n", buffer);
 */
 
 
 
-  // keep track of totalchars written
-  int totalCharsWritten = 0;
-
-  // Send to the server in a loop until all bytes are sent
-  while (totalCharsWritten < combinedBufferLength) {
-    charsWritten = send(socketFD, combinedBuffer + totalCharsWritten, combinedBufferLength - totalCharsWritten, 0); 
-    if (charsWritten < 0){
-      error("CLIENT: ERROR writing to socket");
-    }
-    totalCharsWritten += charsWritten;
-  }
-
-  if (totalCharsWritten < combinedBufferLength){
-    fprintf(stderr, "CLIENT: WARNING: Not all data written to socket!\n");
-  }
 
 
-  size_t totalReceived = 0;
-  //create a buffer of the same size as the plain text file buffer, received data is likely the same size
-  //but we can realocate more if needed later
-  char* receiveBuffer = malloc(plainTextFileLength);
-  if(!receiveBuffer){
-    fprintf(stderr, "CLIENT: Failed to allocate memory for received data");
-  }
- //keep track of chars received
-  int keepLooping = 1;
-  while (keepLooping == 1) {
-    //get returned message from server
-    charsRead = recv(socketFD, receiveBuffer + totalReceived, plainTextFileLength - totalReceived, 0);
-    
-    //end looping if there was an error or was connection closed?
-    if (charsRead == -1 || charsRead == 0) {
-      break;
-    }
 
-    totalReceived += charsRead;
-    
-    //double the buffer if full
-    if (totalReceived == plainTextFileLength) {
-      plainTextFileLength *= 2; // Double it
-      receiveBuffer = realloc(receiveBuffer, plainTextFileLength);
-      if (!receiveBuffer) {
-        fprintf(stderr, "CLIENT: Failed to reallocate memory for receive buffer");
-      }
-    }
-
-  }
-
-
-  //charsRead = recv(socketFD, buffer, sizeof(buffer) - 1, 0); 
-  if (charsRead < 0){
-    error("CLIENT: ERROR reading from socket");
-  }
 
   //print encrypted message received
-  printf("%s\n", receiveBuffer);
+  //printf("%s\n", receiveBuffer);
 
   // Close the socket and clean up the buffer bonanza
   close(socketFD); 
   free(fileBuffer);
   free(keyBuffer);
-  free(receiveBuffer);
-  free(combinedBuffer);
+  //free(receiveBuffer);
+  //free(combinedBuffer);
   return 0;
 }
