@@ -1,15 +1,18 @@
-#include <sys/types.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <unistd.h>
 #include <string.h>
+#include <unistd.h>
+#include <sys/types.h>
 #include <sys/socket.h>
-#include <netdb.h>
-#include <errno.h>
-#include <signal.h>
-#include <sys/wait.h>
+#include <netinet/in.h>
 
-#define BUF_SIZE 100000
+#define BUF_SIZE 75000
+
+// Error function used for reporting issues
+void error(const char *msg) {
+  perror(msg);
+  exit(1);
+}
 
 // function to split the comma delimited data received from the client
 // the data is: plaintext,key\n
@@ -40,263 +43,218 @@ void splitBuffer(const char *buf, char **input, char **key) {
 }
 
 // Function to encrypt the data we got 
-char* encrypt(const char* input, const char* key) {
-    int length = strlen(input);
-    char* encrypted = malloc(length + 1);
-    if (encrypted == NULL) {
-        printf("Memory allocation failed.\n");
-        exit(1);
-    }
+char decrypt(char input, char key) {
 
-    for (int i = 0; i < length; i++) {
-        int messageVal = (input[i] == ' ') ? 26 : input[i] - 'A';
-        int keyVal = (key[i] == ' ') ? 26 : key[i] - 'A';
-        // mod 27 to account for the space character
-        int encryptedVal = (messageVal + keyVal) % 27;
-        encrypted[i] = (encryptedVal == 26) ? ' ' : 'A' + encryptedVal;
-    }
-    //null terminate
-    encrypted[length] = '\0';
-    return encrypted;
+    char converted;
+    int messageVal = (input == ' ') ? 26 : input - 'A';
+    int keyVal = (key == ' ') ? 26 : key - 'A';
+    // mod 27 to account for the space character
+    int convertedVal = (messageVal - keyVal + 27) % 27;
+    converted = (convertedVal == 26) ? ' ' : 'A' + convertedVal;
+
+    return converted;
 }
 
-// Function to decrypt the input
-char* decrypt(const char* input, const char* key) {
-	int length = strlen(input);
-    char* decrypted = malloc(length + 1);
-    if (decrypted == NULL) {
-        printf("Memory allocation failed.\n");
-        exit(1);
-    }
-
-    for (int i = 0; i < length; i++) {
-        int encryptedVal = (input[i] == ' ') ? 26 : input[i] - 'A';
-        int keyVal = (key[i] == ' ') ? 26 : key[i] - 'A';
-        int decryptedVal = (encryptedVal - keyVal + 27) % 27;
-        decrypted[i] = (decryptedVal == 26) ? ' ' : 'A' + decryptedVal;
-    }
-    decrypted[length] = '\0'; // Null-terminate the decrypted string
-    return decrypted;
-}
 
 void processRequest(int cfd) {
- /* Read data from the connection */
-          char buf[BUF_SIZE];
-          memset(buf, 0, BUF_SIZE);
-          ssize_t nread;
-          ssize_t totalRead = 0;
-          while (totalRead < BUF_SIZE) {
-            nread = read(cfd, buf + totalRead, BUF_SIZE - totalRead);
-            if (nread == -1) {
-              perror("read");
-              close(cfd);
-              exit(EXIT_FAILURE);
-            }
-            totalRead += nread;
-              //are we done? check if null terminator was received whch means we are done
-              //break out of the loop to avoid read from holding for more data to be received when there is no more
-            if(buf[nread] == '\0') {
-            //if(buf[strlen(buf) -1]  == '@') {
-              break;
-            }
 
-          }
-          //split the plain text and the key, they are delimited by a commaa
-          char *input = NULL;
-          char *key = NULL;
-          splitBuffer(buf, &input, &key);
-          char *encryptedMessage = decrypt(input, key);
+/*
 
-          ssize_t encryptedMessageLength = strlen(encryptedMessage);
-
-          // send the data back to the client
-          ssize_t totalWritten = 0;
-          ssize_t nwritten;
-          while (totalWritten < encryptedMessageLength) {
-            nwritten = write(cfd, encryptedMessage + totalWritten, encryptedMessageLength - totalWritten);
-            if (nwritten == -1) {
-              perror("write");
-              close(cfd);
-              free(encryptedMessage);
-              exit(EXIT_FAILURE);
-            }
-            totalWritten += nwritten;
-          }//end while write loop
-          free(input);
-          free(encryptedMessage);
-}
-//from the book: SIGCHILD handler to reap dead child processes
-static void grimReaper(int sig) {
-    int savedErrno;
-   savedErrno = errno;
-   while(waitpid(-1, NULL, WNOHANG) > 0) {
-       continue;
-   }
-   errno = savedErrno;
-}
-
-//do i want to shake hands with client?
-int handshake(int socketFD){
-    char buffer[3];
-    int n;
-     // sending "D#" to say I am Decryption Server
-    n = write(socketFD, "D#", 2);
-    if (n < 0){
-      return 0;
-      fprintf(stderr, "DEC SERVER: ERROR writing to socket during handshake");
+  size_t totalReceived = 0;
+  //create a buffer of the same size as the plain text file buffer, received data is likely the same size
+  //but we can realocate more if needed later
+  char* receiveBuffer = malloc(plainTextFileLength);
+  if(!receiveBuffer){
+    fprintf(stderr, "CLIENT: Failed to allocate memory for received data");
+  }
+ //keep track of chars received
+  int keepLooping = 1;
+  while (keepLooping == 1) {
+    //get returned message from server
+    charsRead = recv(socketFD, receiveBuffer + totalReceived, plainTextFileLength - totalReceived, 0);
+    
+    //end looping if there was an error or was connection closed?
+    if (charsRead == -1 || charsRead == 0) {
+      break;
     }
-    n=0;
-    memset(buffer, 0, 3);
-    while(n < 2) {
-      n = read(socketFD, buffer, 2);
-      if (n < 0) {
-        fprintf(stderr, "DEC SERVER: ERROR reading from socket during handshake");
-        return 0;
-      }
 
-      if (strlen(buffer) == 2 && strcmp(buffer, "D#") == 0) {
-        return 1;
-      } else if (strlen(buffer) > 0 ){
+    totalReceived += charsRead;
+    
+    //double the buffer if full
+    if (totalReceived == plainTextFileLength) {
+      plainTextFileLength *= 2; // Double it
+      receiveBuffer = realloc(receiveBuffer, plainTextFileLength);
+      if (!receiveBuffer) {
+        fprintf(stderr, "CLIENT: Failed to reallocate memory for receive buffer");
+      }
+    }
+
+  }
+
+*/
+
+
+ /* Read data from the connection */
+/*  
+    char buf[BUF_SIZE];
+    memset(buf, 0, BUF_SIZE);
+    ssize_t nread;
+    ssize_t totalRead = 0;
+    while (totalRead < BUF_SIZE) {
+      nread = read(cfd, buf + totalRead, BUF_SIZE - totalRead);
+      if (nread == -1) {
+        perror("read");
+        close(cfd);
+        exit(EXIT_FAILURE);
+      }
+      totalRead += nread;
+        //are we done? check if null terminator was received whch means we are done
+        //break out of the loop to avoid read from holding for more data to be received when there is no more
+      if(buf[nread] == '\0') {
+      //if(buf[strlen(buf) -1]  == '@') {
         break;
       }
-    }  
-    return 0;
-  /*
-    char buffer[256];
-    int n, result;
-    
-    memset(buffer, 0, 256);
-    n = read(socketFD, buffer, 255);
-    if (n < 0) {
-       perror("SERVER ERROR reading from socket during handshake");
-       return 0;
-    }
-    
-    //expecting DC from Decryption client
-    if (strcmp(buffer, "DC") == 0) {
-        n = write(socketFD, "ok", 2);
-        result = 1;
-    } else {
-        n = write(socketFD, "false", 5);
-        result = 0;
-    }
 
-    if (n < 0){ 
-      perror("SERVER ERROR writing to socket during handshake");
-      result = 0;
     }
-    
-    return result;
-  */
+    //split the plain text and the key, they are delimited by a commaa
+    char *input = NULL;
+    char *key = NULL;
+    splitBuffer(buf, &input, &key);
+    char *encryptedMessage = encrypt(input, key);
+
+    ssize_t encryptedMessageLength = strlen(encryptedMessage);
+
+    // send the data back to the client
+    ssize_t totalWritten = 0;
+    ssize_t nwritten;
+    while (totalWritten < encryptedMessageLength) {
+      nwritten = write(cfd, encryptedMessage + totalWritten, encryptedMessageLength - totalWritten);
+      if (nwritten == -1) {
+        perror("write");
+        close(cfd);
+        free(encryptedMessage);
+        exit(EXIT_FAILURE);
+      }
+      totalWritten += nwritten;
+    }//end while write loop
+    free(input);
+    free(encryptedMessage);
+ */
 }
 
+// Set up the address struct for the server socket
+void setupAddressStruct(struct sockaddr_in* address, 
+                        int portNumber){
+ 
+  // Clear out the address struct
+  memset((char*) address, '\0', sizeof(*address)); 
 
+  // The address should be network capable
+  address->sin_family = AF_INET;
+  // Store the port number
+  address->sin_port = htons(portNumber);
+  // Allow a client at any address to connect to this server
+  address->sin_addr.s_addr = INADDR_ANY;
+}
 
-int main(int argc, char *argv[])
-{
-    struct addrinfo hints;
-    struct addrinfo *result, *rp;
-    int sfd, s;
-    int cfd; // Socket file descriptor for the client
-    struct sockaddr_storage peer_addr;
-    socklen_t peer_addr_len;
-    //ssize_t nread;
-   // char buf[BUF_SIZE];
+int main(int argc, char *argv[]){
+  int connectionSocket, charsRead;
+  char buffer[256];
+  struct sockaddr_in serverAddress, clientAddress;
+  socklen_t sizeOfClientInfo = sizeof(clientAddress);
 
-    if (argc != 2) {
-        fprintf(stderr, "Usage: %s port\n", argv[0]);
-        exit(EXIT_FAILURE);
-    }
-/*
-    //from the book: sig action handler
-    struct sigaction sa;
-    sigemptyset(&sa.sa_mask);  
-    sa.sa_flags = SA_RESTART;
-    sa.sa_handler = grimReaper;
+  // Check usage & args
+  if (argc < 2) { 
+    fprintf(stderr,"USAGE: %s port\n", argv[0]); 
+    exit(1);
+  } 
+  
+  // Create the socket that will listen for connections
+  int listenSocket = socket(AF_INET, SOCK_STREAM, 0);
+  if (listenSocket < 0) {
+    error("Server ERROR opening socket");
+  }
 
-    if (sigaction(SIGCHLD, &sa, NULL) == -1) {
-        perror("sigaction");
-        exit(EXIT_FAILURE);
-    }
-*/
+  // Set up the address struct for the server socket
+  setupAddressStruct(&serverAddress, atoi(argv[1]));
 
-    memset(&hints, 0, sizeof(struct addrinfo));
-    hints.ai_family = AF_UNSPEC;    /* Allow IPv4 or IPv6 */
-    hints.ai_socktype = SOCK_STREAM; /* Stream socket (TCP) */
-    hints.ai_flags = AI_PASSIVE;    /* For wildcard IP address */
-    hints.ai_protocol = 0;          /* Any protocol */
-    hints.ai_canonname = NULL;
-    hints.ai_addr = NULL;
-    hints.ai_next = NULL;
+  // Associate the socket to the port
+  if (bind(listenSocket, 
+          (struct sockaddr *)&serverAddress, 
+          sizeof(serverAddress)) < 0){
+    error("Server ERROR on binding");
+  }
 
-    s = getaddrinfo(NULL, argv[1], &hints, &result);
-    if (s != 0) {
-        fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(s));
-        exit(EXIT_FAILURE);
-    }
-
-    for (rp = result; rp != NULL; rp = rp->ai_next) {
-        sfd = socket(rp->ai_family, rp->ai_socktype, rp->ai_protocol);
-        if (sfd == -1)
-            continue;
-
-        if (bind(sfd, rp->ai_addr, rp->ai_addrlen) == 0)
-            break; /* Success */
-
-        close(sfd);
-    }
-
-    if (rp == NULL) { /* No address succeeded */
-        fprintf(stderr, "Could not bind\n");
-        exit(EXIT_FAILURE);
+  // Start listening for connetions. Allow up to 5 connections to queue up
+  listen(listenSocket, 5); 
+  
+  // Accept a connection, blocking if one is not available until one connects
+  while(1){
+    // Accept the connection request which creates a connection socket
+    connectionSocket = accept(listenSocket, 
+                (struct sockaddr *)&clientAddress, 
+                &sizeOfClientInfo); 
+    if (connectionSocket < 0){
+      error("Server ERROR on accept");
     }
 
-    freeaddrinfo(result); /* No longer needed */
+    // Get the message from the client and display it
+    memset(buffer, '\0', 256);
+    // Read the client's message from the socket
+    char plaintextChar;
+    char keyChar;
+    int pTxtDone = 0;
+    int pCharsRead;
+    int keyDone = 0;
+    int keyCharsRead;
+    int sentChars;
+    char convertedChar;
 
-    if (listen(sfd, 5) == -1) {
-        perror("listen");
-        exit(EXIT_FAILURE);
-    }
-
-//    for(;;){
-        /* Accept a connection. Note: this is a blocking call. */
-        peer_addr_len = sizeof(struct sockaddr_storage);
-        cfd = accept(sfd, (struct sockaddr *)&peer_addr, &peer_addr_len);
-        if (cfd == -1) {
-          perror("Failure accepting connection");
-          exit(EXIT_FAILURE);
+    while(1) {
+      if(pTxtDone == 0){
+        pCharsRead = recv(connectionSocket, &plaintextChar, 1, 0);
+        if (plaintextChar == '@'){
+          pTxtDone = 1;
         }
+        if (pCharsRead < 0){
+          error("ERROR reading from socket");
+        }
+//fprintf(stderr, "%c", plaintextChar);
+      }
+
+      if(keyDone == 0){
+        keyCharsRead = recv(connectionSocket, &keyChar, 1, 0);
+        if (keyChar == '\n' || pTxtDone == 1){
+          keyDone = 1;
+        }
+        if (keyCharsRead < 0){
+          error("Server ERROR reading from socket");
+        }
+      }
+      if (pTxtDone == 1 && keyDone == 1){
+        break;
+      } else {
+        convertedChar = decrypt(plaintextChar, keyChar);
+        sentChars = send(connectionSocket, &convertedChar, 1, 0);
+        if (sentChars < 0) {
+           error("Server error sending from socket");
+        }
+        //fprintf(stderr, "%c", convertedChar);
+      }
+    }
 /*
-        switch(fork()){
-          case -1:
-            perror("Error Creating new process with fork()");
-            close(cfd);
-            break;
-          
-          case 0:
-            //child process
-            close(sfd);
+    // Send a Success message back to the client
+    charsRead = send(connectionSocket, 
+                    "I am the server, and I got your message", 39, 0); 
+    if (charsRead < 0){
+      error("ERROR writing to socket");
+    }
 */
-//           if(handshake(cfd) == 1){
-              processRequest(cfd);
-//           } else {
-              //close(cfd);
-//           }
-
-/*
-            //terminate child process
-            exit(0);
-
-          default:
-            //parent process
-            close(cfd);
-            break;
-      }//end switch
-*/ 
-//    }//end infinity for
-
-    close(cfd); // Close the client socket
-    close(sfd); // Close the server socket
-    return 0;
+    // Close the connection socket for this client
+    close(connectionSocket); 
+  }
+  // Close the listening socket
+  close(listenSocket); 
+  return 0;
 }
 
