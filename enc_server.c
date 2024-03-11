@@ -44,25 +44,6 @@ void splitBuffer(const char *buf, char **input, char **key) {
 
 // Function to encrypt the data we got 
 char encrypt(char input, char key) {
-    /*
-    int length = strlen(input);
-    char* encrypted = malloc(length + 1);
-    if (encrypted == NULL) {
-        printf("Memory allocation failed.\n");
-        exit(1);
-    }
-
-    for (int i = 0; i < length; i++) {
-        int messageVal = (input[i] == ' ') ? 26 : input[i] - 'A';
-        int keyVal = (key[i] == ' ') ? 26 : key[i] - 'A';
-        // mod 27 to account for the space character
-        int encryptedVal = (messageVal + keyVal) % 27;
-        encrypted[i] = (encryptedVal == 26) ? ' ' : 'A' + encryptedVal;
-    }
-    //null terminate
-    encrypted[length] = '\0';
-    return encrypted;
-*/
     char converted;
     int messageVal = (input == ' ') ? 26 : input - 'A';
     int keyVal = (key == ' ') ? 26 : key - 'A';
@@ -71,6 +52,33 @@ char encrypt(char input, char key) {
     converted = (convertedVal == 26) ? ' ' : 'A' + convertedVal;
 
     return converted;
+}
+
+int handshake(int socketFD){
+    char buffer[3];
+    int n;
+     // sending "E#" to say I am Encryption Client
+    n = write(socketFD, "E#", 2);
+    if (n < 0){
+      return 0;
+      fprintf(stderr, "CLIENT: ERROR writing to socket during handshake");
+    }
+    n=0;
+    memset(buffer, 0, 3);
+    while(n < 2) {
+      n = read(socketFD, buffer, 2);
+      if (n < 0) {
+        fprintf(stderr, "CLIENT: ERROR reading from socket during handshake");
+        return 0;
+      }
+
+      if (strlen(buffer) == 2 && strcmp(buffer, "E#") == 0) {
+        return 1;
+      } else if (strlen(buffer) > 0 ){
+        break;
+      }
+    }  
+    return 0;
 }
 
 
@@ -214,6 +222,10 @@ int main(int argc, char *argv[]){
                 &sizeOfClientInfo); 
     if (connectionSocket < 0){
       error("Server ERROR on accept");
+    }
+    if(handshake(connectionSocket) == 0){
+      close(connectionSocket); 
+      continue;
     }
 
     // Get the message from the client and display it

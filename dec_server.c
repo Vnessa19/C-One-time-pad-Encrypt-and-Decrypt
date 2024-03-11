@@ -55,6 +55,35 @@ char decrypt(char input, char key) {
     return converted;
 }
 
+//do i want to shake hands with client?
+int handshake(int socketFD){
+    char buffer[3];
+    int n;
+     // sending "D#" to say I am Decryption Server
+    n = write(socketFD, "D#", 2);
+    if (n < 0){
+      return 0;
+      fprintf(stderr, "DEC SERVER: ERROR writing to socket during handshake");
+    }
+    n=0;
+    memset(buffer, 0, 3);
+    while(n < 2) {
+      n = read(socketFD, buffer, 2);
+      if (n < 0) {
+        fprintf(stderr, "DEC SERVER: ERROR reading from socket during handshake");
+        return 0;
+      }
+
+      if (strlen(buffer) == 2 && strcmp(buffer, "D#") == 0) {
+        return 1;
+      } else if (strlen(buffer) > 0 ){
+        break;
+      }
+    }  
+    return 0;
+}
+
+
 
 void processRequest(int cfd) {
 
@@ -196,6 +225,11 @@ int main(int argc, char *argv[]){
                 &sizeOfClientInfo); 
     if (connectionSocket < 0){
       error("Server ERROR on accept");
+    }
+
+    if (handshake(connectionSocket) == 0){
+      close(connectionSocket);
+      continue;
     }
 
     // Get the message from the client and display it

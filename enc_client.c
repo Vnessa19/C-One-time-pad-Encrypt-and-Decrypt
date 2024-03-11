@@ -197,9 +197,10 @@ int main(int argc, char *argv[]) {
   }
 
   
-//  if(handshake(socketFD) == 0) {
-//    error("CLIENT: Handshake rejected by server.");  
-//  }
+  if(handshake(socketFD) == 0) {
+    close(socketFD); 
+    error("CLIENT: Handshake rejected by server.");  
+  }
 
 // Clear out the buffer array
  // char buffer[500];

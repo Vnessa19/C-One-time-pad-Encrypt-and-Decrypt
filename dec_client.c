@@ -120,8 +120,8 @@ char* combineBuffersCommaDemilimted(const char* buffer1, size_t length1, const c
 int handshake(int socketFD){
     char buffer[3];
     int n;
-     // sending "E#" to say I am Encryption Client
-    n = write(socketFD, "E#", 2);
+     // sending "D#" to say I am Decryption Client
+    n = write(socketFD, "D#", 2);
     if (n < 0){
       return 0;
       fprintf(stderr, "CLIENT: ERROR writing to socket during handshake");
@@ -135,7 +135,7 @@ int handshake(int socketFD){
         return 0;
       }
 
-      if (strlen(buffer) == 2 && strcmp(buffer, "E#") == 0) {
+      if (strlen(buffer) == 2 && strcmp(buffer, "D#") == 0) {
         return 1;
       } else if (strlen(buffer) > 0 ){
         break;
@@ -197,9 +197,10 @@ int main(int argc, char *argv[]) {
   }
 
   
-//  if(handshake(socketFD) == 0) {
-//    error("CLIENT: Handshake rejected by server.");  
-//  }
+  if(handshake(socketFD) == 0) {
+    close(socketFD); 
+    error("CLIENT: Handshake rejected by server.");  
+  }
 
 // Clear out the buffer array
  // char buffer[500];
