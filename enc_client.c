@@ -144,6 +144,17 @@ int handshake(int socketFD){
     return 0;
 }
 
+//function to check for invalid chars 
+void hasInvalidChars(char* inputBuff, size_t length) {
+  for (int i = 0; i < length; ++i) {
+      //if the curent character is not an uppercase letter and not a space and not a new line
+      //then we got an error
+      if (!isupper(inputBuff[i]) && inputBuff[i] != ' ' && inputBuff[i] != '\n') {
+         fprintf(stderr, "CLIENT: Invalid charater found\n");
+         exit(1);
+      }
+    }
+}
 
 int main(int argc, char *argv[]) {
   //argv[1] this is the plain text input filename 
@@ -161,25 +172,22 @@ int main(int argc, char *argv[]) {
  // load the file contents file into filebuffer
   size_t plainTextFileLength;
   char* fileBuffer = readFileIntoBuffer(argv[1], &plainTextFileLength);
-  //insert poison pill at the new line
-  if(fileBuffer[plainTextFileLength - 1] =='\n') {
-    fileBuffer[plainTextFileLength - 1] = '@';
-    //plainTextFileLength--;
-  }
+  hasInvalidChars(fileBuffer, plainTextFileLength);
 
   // now load key file into another buffer
   size_t keyLength;
   char* keyBuffer = readFileIntoBuffer(argv[2], &keyLength);
-
+  hasInvalidChars(keyBuffer, keyLength);
   if(keyLength < plainTextFileLength) {
     fprintf(stderr, "CLIENT: Key file is shorter than plaintext.");
     exit(1);
   }
+   
 
-  //now lets combine both buffers separated by a coma so that we can send 
-  //the whole thing in one message to the server
- // char* combinedBuffer = combineBuffersCommaDemilimted(fileBuffer, plainTextFileLength, keyBuffer, keyLength);
-  //size_t combinedBufferLength = strlen(combinedBuffer);
+   //insert poison pill at the new line
+  if(fileBuffer[plainTextFileLength - 1] =='\n') {
+    fileBuffer[plainTextFileLength - 1] = '@';
+  }
 
   
   // Create a socket
@@ -202,9 +210,6 @@ int main(int argc, char *argv[]) {
     error("CLIENT: Handshake rejected by server.");  
   }
 
-// Clear out the buffer array
- // char buffer[500];
-  //memset(buffer, '\0', sizeof(buffer));
   // Send message to server
   
     int doneSend1 = 0;
