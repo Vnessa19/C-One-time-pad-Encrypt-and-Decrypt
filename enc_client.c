@@ -45,77 +45,6 @@ void setupAddressStruct(struct sockaddr_in* address,
         hostInfo->h_length);
 }
 
-/*
- * Reeusabel function to load contents of files is more convenient
- * param filename is the name of the file
- * param length is a reference to a var in memory will be set to the length of the contents of the file
- *             Useful to compare size of key and plantext
- * returns the contents of the files
- */
-char* readFileIntoBuffer(const char* filename, size_t* length) {
-  FILE* file = fopen(filename, "rb");
-  if (!file) {
-    error("CLIENT: Failed to open file");
-    exit(1);
-  }
-  //lets get the lenght of the contents using fseek and ftell
-  fseek(file, 0, SEEK_END);
-  *length = ftell(file);
-  fseek(file, 0, SEEK_SET);
-
-  char* buffer = malloc(*length);
-  if (!buffer) {
-    error("CLIENT: Memory allocation failed");
-    fclose(file);
-    exit(1);
-  }
-
-  if (fread(buffer, 1, *length, file) != *length) {
-    error("CLIENT: Failed to read file");
-    free(buffer);
-    fclose(file);
-    exit(1);
-  }
-  fclose(file);
-  return buffer;
-}
-
-/*
-char* combineBuffersCommaDemilimted(const char* buffer1, size_t length1, const char* buffer2, size_t length2) {
-    // the total length for the combined buffer 
-    // plus 3 for the comma, an end of transmission indicator @ for null termnator 
-    size_t totalLength = length1 + length2 + 3;
-    char* combinedBuffer = (char*)malloc(totalLength);
-    if (!combinedBuffer) {
-        fprintf(stderr, "Failed to allocate memory for combined buffer\n");
-        exit(1);
-    }
-
-    // the first buffer first
-    memcpy(combinedBuffer, buffer1, length1);
-    // then add the comma
-    combinedBuffer[length1] = ',';
-    // and then the second buffer
-    memcpy(combinedBuffer + length1 + 1, buffer2, length2);
-    // null terminate the combined buffer
-    combinedBuffer[totalLength - 2] = '@';
-
-    // null terminate the combined buffer
-    combinedBuffer[totalLength - 1] = '\0';
-
-    //check for invalid characters in the cobbined buffer
-    for (int i = 0; combinedBuffer[i] != '\0'; ++i) {
-        //if the curent character is not an uppercase letter, not a space and not a comma
-        //then we got an error
-        if (!isupper(combinedBuffer[i]) && combinedBuffer[i] != ' ' && combinedBuffer[i] != ',' && combinedBuffer[i] != '\n' && combinedBuffer[i] != '@') {
-          fprintf(stderr, "CLIENT: Invalid charater found\n");
-          exit(1);
-        }
-    }
-
-    return combinedBuffer;
-}
-*/
 //offer a handshake to server
 int handshake(int socketFD){
     char buffer[3];
@@ -145,15 +74,13 @@ int handshake(int socketFD){
 }
 
 //function to check for invalid chars 
-void hasInvalidChars(char* inputBuff, size_t length) {
-  for (int i = 0; i < length; ++i) {
-      //if the curent character is not an uppercase letter and not a space and not a new line
-      //then we got an error
-      if (!isupper(inputBuff[i]) && inputBuff[i] != ' ' && inputBuff[i] != '\n') {
-         fprintf(stderr, "CLIENT: Invalid charater found\n");
-         exit(1);
-      }
+int isInvalidChar(char inputChar) {
+    //if the curent character is not an uppercase letter and not a space and not a new line
+    //then we got an unexpected value 
+    if (!isupper(inputChar) && inputChar != ' ' && inputChar != '\n') {
+        return 1;
     }
+    return 0;
 }
 
 int main(int argc, char *argv[]) {
@@ -168,27 +95,29 @@ int main(int argc, char *argv[]) {
   if (argc < 4) { 
     fprintf(stderr,"USAGE: %s plaintext_filename key_filename port\n", argv[0]);
     exit(1);
-  } 
- // load the file contents file into filebuffer
-  size_t plainTextFileLength;
-  char* fileBuffer = readFileIntoBuffer(argv[1], &plainTextFileLength);
-  hasInvalidChars(fileBuffer, plainTextFileLength);
+  }
+  //open the input file and the Key file
+  FILE* inputFile = fopen(argv[1], "rb");
+  FILE* keyFile = fopen(argv[2], "rb");
 
-  // now load key file into another buffer
-  size_t keyLength;
-  char* keyBuffer = readFileIntoBuffer(argv[2], &keyLength);
-  hasInvalidChars(keyBuffer, keyLength);
+  if (!inputFile || !keyFile) {
+    error("CLIENT: Failed to open file");
+  }
+
+  // get the lenght of the files
+  fseek(inputFile, 0, SEEK_END);
+  size_t plainTextFileLength = ftell(inputFile);
+  fseek(inputFile, 0, SEEK_SET);
+
+  fseek(keyFile, 0, SEEK_END);
+  size_t keyLength = ftell(keyFile);
+  fseek(keyFile, 0, SEEK_SET);
+    
+  //check if key is smaller than input
   if(keyLength < plainTextFileLength) {
     fprintf(stderr, "CLIENT: Key file is shorter than plaintext.");
     exit(1);
   }
-   
-
-   //insert poison pill at the new line
-  if(fileBuffer[plainTextFileLength - 1] =='\n') {
-    fileBuffer[plainTextFileLength - 1] = '@';
-  }
-
   
   // Create a socket
   socketFD = socket(AF_INET, SOCK_STREAM, 0); 
@@ -203,95 +132,74 @@ int main(int argc, char *argv[]) {
   if (connect(socketFD, (struct sockaddr*)&serverAddress, sizeof(serverAddress)) < 0){
     error("CLIENT: ERROR connecting");
   }
-
-  
+ 
   if(handshake(socketFD) == 0) {
     close(socketFD); 
     error("CLIENT: Handshake rejected by server.");  
   }
 
-  // Send message to server
-  
-    int doneSend1 = 0;
-    int doneSend2 = 0;
-    int sendCount1 = 0;
-    int sendCount2 = 0;
-    int pCharsSent;
-    int keyCharsSent;
-    int charsRead;
-    char receivedChar;
+  char charFromInputFile;
+  char charFromKeyFile;
+  int doneSend1 = 0;
+  int doneSend2 = 0;
+  int pCharsSent;
+  int keyCharsSent;
+  int charsRead;
+  char receivedChar;
 
-    while(1) {
-      if(doneSend1 == 0) {
-        pCharsSent =  send(socketFD, &fileBuffer[sendCount1], 1, 0); 
-        if (pCharsSent < 0){
-          error("ERROR reading from socket");
-        }
-        if (fileBuffer[sendCount1] == '@') {
-          doneSend1 = 1;
-        }
-        sendCount1++;
+  while(1) {
+    //read sigle character from each file
+    if (fread(&charFromInputFile, 1, 1, inputFile) < 1 || fread(&charFromKeyFile, 1, 1, keyFile) < 1) {
+      error("CLIENT: Failed to read file");
+      fclose(keyFile);
+      fclose(inputFile);
+      exit(1);
+    }
+    //check for invalid characters
+    if (isInvalidChar(charFromInputFile) == 1 || isInvalidChar(charFromKeyFile) == 1) {
+      fprintf(stderr, "CLIENT: Invalid charater found\n");
+      exit(1);
+    }
+    //replace with end of transmission indicator if this is the new line character found at the last character in the file
+    if (charFromInputFile == '\n') charFromInputFile = '@';
+
+    // start streaming message to server sending one char at a time from each file
+    if(doneSend1 == 0) {
+      pCharsSent =  send(socketFD, &charFromInputFile, 1, 0); 
+      if (pCharsSent < 0){
+        error("ERROR reading from socket");
       }
-
-      if(doneSend2 == 0){
-        keyCharsSent = send(socketFD, &keyBuffer[sendCount2], 1, 0);
-        if (keyCharsSent < 0){
-          error("ERROR reading from socket");
-        }
-        if (keyBuffer[sendCount2] == '\n' || doneSend1 == 1) {
-          doneSend2 = 1;
-        }
-
-        sendCount2++;
+      if (charFromInputFile == '@') {
+        doneSend1 = 1;
       }
-
-      if (doneSend1 == 1 && doneSend2 == 1){
-        printf("\n");
-        break;
-      } else {
-        charsRead = recv(socketFD, &receivedChar, 1, 0);
-        if (charsRead < 0){
-          error("Server ERROR reading from socket");
-        }
-        printf("%c", receivedChar);
-      }
-
     }
 
-  //charsWritten = send(socketFD, buffer, strlen(buffer), 0); 
-  //if (charsWritten < 0){
-  //  error("CLIENT: ERROR writing to socket");
-  //}
-  //if (charsWritten < strlen(buffer)){
-  //  printf("CLIENT: WARNING: Not all data written to socket!\n");
- // }
+    if(doneSend2 == 0){
+      keyCharsSent = send(socketFD, &charFromKeyFile, 1, 0);
+      if (keyCharsSent < 0){
+        error("ERROR reading from socket");
+      }
+      if (charFromKeyFile == '\n' || doneSend1 == 1) {
+        doneSend2 = 1;
+      }
+    }
 
-  // Get return message from server
-  // Clear out the buffer again for reuse
-/* 
-  memset(buffer, '\0', sizeof(buffer));
-  // Read data from the socket, leaving \0 at end
-  charsRead = recv(socketFD, buffer, sizeof(buffer) - 1, 0); 
-  if (charsRead < 0){
-    error("CLIENT: ERROR reading from socket");
+    if (doneSend1 == 1 && doneSend2 == 1){
+      printf("\n");
+      fclose(keyFile);
+      fclose(inputFile);
+      break;
+    } else {
+      charsRead = recv(socketFD, &receivedChar, 1, 0);
+      if (charsRead < 0){
+        error("Server ERROR reading from socket");
+      }
+      printf("%c", receivedChar);
+    }
+
   }
-  printf("CLIENT: I received this from the server: \"%s\"\n", buffer);
-*/
 
-
-
-
-
-
-
-  //print encrypted message received
-  //printf("%s\n", receiveBuffer);
-
-  // Close the socket and clean up the buffer bonanza
+  // Close the socket and clean up
   close(socketFD); 
-  free(fileBuffer);
-  free(keyBuffer);
-  //free(receiveBuffer);
-  //free(combinedBuffer);
   return 0;
 }
