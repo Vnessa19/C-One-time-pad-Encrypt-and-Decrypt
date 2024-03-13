@@ -140,6 +140,7 @@ int main(int argc, char *argv[]) {
 
   char charFromInputFile;
   char charFromKeyFile;
+  char sendBuff[2];
   int doneSend1 = 0;
   int doneSend2 = 0;
   int pCharsSent;
@@ -149,7 +150,7 @@ int main(int argc, char *argv[]) {
 
   while(1) {
     //read sigle character from each file
-    if (fread(&charFromInputFile, 1, 1, inputFile) < 1 || fread(&charFromKeyFile, 1, 1, keyFile) < 1) {
+    if (fread(&charFromInputFile, 1, sizeof charFromInputFile, inputFile) < 1 || fread(&charFromKeyFile, 1, sizeof charFromKeyFile, keyFile) < 1) {
       error("CLIENT: Failed to read file");
       fclose(keyFile);
       fclose(inputFile);
@@ -163,8 +164,34 @@ int main(int argc, char *argv[]) {
     //replace with end of transmission indicator if this is the new line character found at the last character in the file
     if (charFromInputFile == '\n') charFromInputFile = '@';
 
+    sendBuff[0] = charFromInputFile;
+    sendBuff[1] = charFromKeyFile;
+
+    if(doneSend1 == 0){
+      pCharsSent =  send(socketFD, sendBuff, 2, 0); 
+      if (pCharsSent < 0){
+        error("ERROR reading from socket");
+      }
+      if (charFromInputFile == '@') {
+        doneSend1 = 1;
+      }
+    }
+
+    if (doneSend1 == 1) {
+      printf("\n");
+      fclose(keyFile);
+      fclose(inputFile);
+      break;
+    } else {
+      charsRead = recv(socketFD, &receivedChar, 1, 0);
+      if (charsRead < 0){
+        error("Server ERROR reading from socket");
+      }
+      printf("%c",receivedChar);
+      fflush(stdout);
+    }
     // start streaming message to server sending one char at a time from each file
-    if(doneSend1 == 0) {
+    /*if(doneSend1 == 0) {
       pCharsSent =  send(socketFD, &charFromInputFile, 1, 0); 
       if (pCharsSent < 0){
         error("ERROR reading from socket");
@@ -194,8 +221,11 @@ int main(int argc, char *argv[]) {
       if (charsRead < 0){
         error("Server ERROR reading from socket");
       }
-      printf("%c", receivedChar);
-    }
+      printf("%c",receivedChar);
+      fflush(stdout);
+    }*/
+   
+
 
   }
 

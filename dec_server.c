@@ -16,7 +16,7 @@ void error(const char *msg) {
 
 // function to split the comma delimited data received from the client
 // the data is: plaintext,key\n
-void splitBuffer(const char *buf, char **input, char **key) {
+/*void splitBuffer(const char *buf, char **input, char **key) {
     //lets find the positio of the comma and point to it
     char *commaPtr = strchr(buf, ',');
     if (commaPtr != NULL) {
@@ -40,7 +40,7 @@ void splitBuffer(const char *buf, char **input, char **key) {
         *input = NULL;
         *key = NULL;
     }
-}
+}*/
 
 // Function to encrypt the data we got 
 char decrypt(char input, char key) {
@@ -55,22 +55,21 @@ char decrypt(char input, char key) {
     return converted;
 }
 
-//do i want to shake hands with client?
 int handshake(int socketFD){
     char buffer[3];
     int n;
-     // sending "D#" to say I am Decryption Server
+     // sending "E#" to say I am Encryption Client
     n = write(socketFD, "D#", 2);
     if (n < 0){
       return 0;
-      fprintf(stderr, "DEC SERVER: ERROR writing to socket during handshake");
+      fprintf(stderr, "CLIENT: ERROR writing to socket during handshake");
     }
     n=0;
     memset(buffer, 0, 3);
     while(n < 2) {
       n = read(socketFD, buffer, 2);
       if (n < 0) {
-        fprintf(stderr, "DEC SERVER: ERROR reading from socket during handshake");
+        fprintf(stderr, "CLIENT: ERROR reading from socket during handshake");
         return 0;
       }
 
@@ -84,91 +83,68 @@ int handshake(int socketFD){
 }
 
 
+void processRequest(int connectionSocket) {
+    char plaintextChar;
+    char keyChar;
+    char receivedData[2];
+    int pTxtDone = 0;
+    int pCharsRead;
+    int keyDone = 0;
+    int keyCharsRead;
+    int sentChars;
+    char convertedChar;
 
-void processRequest(int cfd) {
+    while(1) {
+      pCharsRead = recv(connectionSocket, &receivedData, 2, 0);
+      if (pCharsRead < 0){
+          error("ERROR reading from socket");
+          break;
+        } else if (pCharsRead < sizeof(receivedData)) {
+             continue;
+        }
 
-/*
-
-  size_t totalReceived = 0;
-  //create a buffer of the same size as the plain text file buffer, received data is likely the same size
-  //but we can realocate more if needed later
-  char* receiveBuffer = malloc(plainTextFileLength);
-  if(!receiveBuffer){
-    fprintf(stderr, "CLIENT: Failed to allocate memory for received data");
-  }
- //keep track of chars received
-  int keepLooping = 1;
-  while (keepLooping == 1) {
-    //get returned message from server
-    charsRead = recv(socketFD, receiveBuffer + totalReceived, plainTextFileLength - totalReceived, 0);
-    
-    //end looping if there was an error or was connection closed?
-    if (charsRead == -1 || charsRead == 0) {
-      break;
-    }
-
-    totalReceived += charsRead;
-    
-    //double the buffer if full
-    if (totalReceived == plainTextFileLength) {
-      plainTextFileLength *= 2; // Double it
-      receiveBuffer = realloc(receiveBuffer, plainTextFileLength);
-      if (!receiveBuffer) {
-        fprintf(stderr, "CLIENT: Failed to reallocate memory for receive buffer");
+      plaintextChar = receivedData[0];
+      keyChar = receivedData[1];
+      convertedChar = decrypt(plaintextChar, keyChar);
+      sentChars = send(connectionSocket, &convertedChar, 1, 0);
+      if (sentChars < 0) {
+        error("Server error sending from socket");
       }
-    }
-
-  }
-
-*/
+}
 
 
- /* Read data from the connection */
-/*  
-    char buf[BUF_SIZE];
-    memset(buf, 0, BUF_SIZE);
-    ssize_t nread;
-    ssize_t totalRead = 0;
-    while (totalRead < BUF_SIZE) {
-      nread = read(cfd, buf + totalRead, BUF_SIZE - totalRead);
-      if (nread == -1) {
-        perror("read");
-        close(cfd);
-        exit(EXIT_FAILURE);
+    /*while(1) {
+      if(pTxtDone == 0){
+        pCharsRead = recv(connectionSocket, &plaintextChar, 1, 0);
+        if (plaintextChar == '@'){
+          pTxtDone = 1;
+        }
+        if (pCharsRead < 0){
+          error("ERROR reading from socket");
+        }
       }
-      totalRead += nread;
-        //are we done? check if null terminator was received whch means we are done
-        //break out of the loop to avoid read from holding for more data to be received when there is no more
-      if(buf[nread] == '\0') {
-      //if(buf[strlen(buf) -1]  == '@') {
+
+      if(keyDone == 0){
+        keyCharsRead = recv(connectionSocket, &keyChar, 1, 0);
+        if (keyChar == '\n' || pTxtDone == 1){
+          keyDone = 1;
+        }
+        if (keyCharsRead < 0){
+          error("Server ERROR reading from socket");
+        }
+      }
+      if (pTxtDone == 1 && keyDone == 1){
         break;
+      } else {
+        convertedChar = encrypt(plaintextChar, keyChar);
+        sentChars = send(connectionSocket, &convertedChar, 1, 0);
+        if (sentChars < 0) {
+           error("Server error sending from socket");
+        }
       }
+    }*/
 
-    }
-    //split the plain text and the key, they are delimited by a commaa
-    char *input = NULL;
-    char *key = NULL;
-    splitBuffer(buf, &input, &key);
-    char *encryptedMessage = encrypt(input, key);
 
-    ssize_t encryptedMessageLength = strlen(encryptedMessage);
-
-    // send the data back to the client
-    ssize_t totalWritten = 0;
-    ssize_t nwritten;
-    while (totalWritten < encryptedMessageLength) {
-      nwritten = write(cfd, encryptedMessage + totalWritten, encryptedMessageLength - totalWritten);
-      if (nwritten == -1) {
-        perror("write");
-        close(cfd);
-        free(encryptedMessage);
-        exit(EXIT_FAILURE);
-      }
-      totalWritten += nwritten;
-    }//end while write loop
-    free(input);
-    free(encryptedMessage);
- */
 }
 
 // Set up the address struct for the server socket
@@ -188,7 +164,6 @@ void setupAddressStruct(struct sockaddr_in* address,
 
 int main(int argc, char *argv[]){
   int connectionSocket, charsRead;
-  char buffer[256];
   struct sockaddr_in serverAddress, clientAddress;
   socklen_t sizeOfClientInfo = sizeof(clientAddress);
 
@@ -223,59 +198,38 @@ int main(int argc, char *argv[]){
     connectionSocket = accept(listenSocket, 
                 (struct sockaddr *)&clientAddress, 
                 &sizeOfClientInfo); 
+    
     if (connectionSocket < 0){
       error("Server ERROR on accept");
     }
-
-    if (handshake(connectionSocket) == 0){
-      close(connectionSocket);
+    if(handshake(connectionSocket) == 0){
+      close(connectionSocket); 
       continue;
     }
 
-    // Get the message from the client and display it
-    memset(buffer, '\0', 256);
-    // Read the client's message from the socket
-    char plaintextChar;
-    char keyChar;
-    int pTxtDone = 0;
-    int pCharsRead;
-    int keyDone = 0;
-    int keyCharsRead;
-    int sentChars;
-    char convertedChar;
+    switch(fork()){
+        case -1:
+          perror("Error Creating new process with fork()");
+          close(connectionSocket);
+          break;
+        
+        case 0:
+          //child process
+          close(listenSocket);
+          processRequest(connectionSocket);
 
-    while(1) {
-      if(pTxtDone == 0){
-        pCharsRead = recv(connectionSocket, &plaintextChar, 1, 0);
-        if (plaintextChar == '@'){
-          pTxtDone = 1;
-        }
-        if (pCharsRead < 0){
-          error("ERROR reading from socket");
-        }
-//fprintf(stderr, "%c", plaintextChar);
-      }
+          //terminate child process
+          exit(0);
 
-      if(keyDone == 0){
-        keyCharsRead = recv(connectionSocket, &keyChar, 1, 0);
-        if (keyChar == '\n' || pTxtDone == 1){
-          keyDone = 1;
-        }
-        if (keyCharsRead < 0){
-          error("Server ERROR reading from socket");
-        }
-      }
-      if (pTxtDone == 1 && keyDone == 1){
-        break;
-      } else {
-        convertedChar = decrypt(plaintextChar, keyChar);
-        sentChars = send(connectionSocket, &convertedChar, 1, 0);
-        if (sentChars < 0) {
-           error("Server error sending from socket");
-        }
-        //fprintf(stderr, "%c", convertedChar);
-      }
-    }
+        default:
+          //parent process
+          close(connectionSocket);
+          break;
+    }//end switch
+
+
+
+   
 /*
     // Send a Success message back to the client
     charsRead = send(connectionSocket, 

@@ -16,7 +16,7 @@ void error(const char *msg) {
 
 // function to split the comma delimited data received from the client
 // the data is: plaintext,key\n
-void splitBuffer(const char *buf, char **input, char **key) {
+/*void splitBuffer(const char *buf, char **input, char **key) {
     //lets find the positio of the comma and point to it
     char *commaPtr = strchr(buf, ',');
     if (commaPtr != NULL) {
@@ -40,7 +40,7 @@ void splitBuffer(const char *buf, char **input, char **key) {
         *input = NULL;
         *key = NULL;
     }
-}
+}*/
 
 // Function to encrypt the data we got 
 char encrypt(char input, char key) {
@@ -85,6 +85,7 @@ int handshake(int socketFD){
 void processRequest(int connectionSocket) {
     char plaintextChar;
     char keyChar;
+    char receivedData[2];
     int pTxtDone = 0;
     int pCharsRead;
     int keyDone = 0;
@@ -93,6 +94,25 @@ void processRequest(int connectionSocket) {
     char convertedChar;
 
     while(1) {
+      pCharsRead = recv(connectionSocket, &receivedData, 2, 0);
+      if (pCharsRead < 0){
+          error("ERROR reading from socket");
+          break;
+        } else if (pCharsRead < sizeof(receivedData)) {
+             continue;
+        }
+
+      plaintextChar = receivedData[0];
+      keyChar = receivedData[1];
+      convertedChar = encrypt(plaintextChar, keyChar);
+      sentChars = send(connectionSocket, &convertedChar, 1, 0);
+      if (sentChars < 0) {
+        error("Server error sending from socket");
+      }
+}
+
+
+    /*while(1) {
       if(pTxtDone == 0){
         pCharsRead = recv(connectionSocket, &plaintextChar, 1, 0);
         if (plaintextChar == '@'){
@@ -121,7 +141,7 @@ void processRequest(int connectionSocket) {
            error("Server error sending from socket");
         }
       }
-    }
+    }*/
 
 
 }
@@ -177,6 +197,7 @@ int main(int argc, char *argv[]){
     connectionSocket = accept(listenSocket, 
                 (struct sockaddr *)&clientAddress, 
                 &sizeOfClientInfo); 
+    
     if (connectionSocket < 0){
       error("Server ERROR on accept");
     }
