@@ -1,0 +1,1 @@
+This project contains five small programs developed on the Linux platform using Vim as the text editor. These programs will utilize multiprocessing and socket-based communication to encrypt and decrypt data akin to a one-time pad system. They should be operable from the command line, supporting standard Unix functionalities such as input/output redirection and job control.
